@@ -1,0 +1,615 @@
+---
+title: "Religiosity and Prosocial Giving among Urban Chinese Citizens"
+authors: "Eliana Lotenberg and Xinxin Zhang"
+date: "December 16, 2024"
+format: 
+  pdf:
+    keep-tex: true
+    include-in-header: 
+       text: |
+         \usepackage{fvextra}
+         \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+         \DefineVerbatimEnvironment{OutputCode}{Verbatim}{breaklines,commandchars=\\\{\}}
+    geometry: 
+      - left=1in
+      - right=1in
+      - top=1in
+      - bottom=1in
+bibliography: 291final.bib
+csl: apa.csl
+---
+# Abstract
+The impact of religiosity is frequently argued to be a predictor of prosocial behavior. This report primarily investigates if religious belief associated with prosocial spending among urban residents in China, using data from the 2007 Spiritual Life Study of Chinese Residents (SLSC), which surveyed 7,021 randomly sampled Chinese people. The analysis used only 339 observations after excluding missing data. We controlled for relevant factors such as political affiliation, happiness level, and monthly household income when analyzing this relationship. Using a combination of t-tests and nested F-tests, we found no significant effect of religion on prosocial spending. Even after allowing happiness level or political affiliation to moderate the relationship between religiosity and prosocial spending, there was no significant difference between religion and non-religious people. This study could be used to inspire further research about the cross-cultural validity of the “religiosity leads to generosity” paradigm. 
+
+# Introduction
+Many studies have investigated the impact of religiosity on prosocial behavior, but the relationship between the two is unclear. Most studies find that religious people allocate more money for charity [@galen2012does] or act more generously [@ahmed_back_2008] overall in experimental conditions, but some scholars argue that their real-life giving may be restricted to only religious charities and otherwise religiously affiliated organizations [@yasin_how_2020]. Additionally, one study found that priming both religious and nonreligious participants with religious texts increased their prosocial behavior, but someone’s religious or non-religious affiliation did not significantly associate with more prosocial giving [@ahmed_madrasah].
+
+Although these studies indicate that the interaction between religious motivation and prosocial giving is unclear in the literature, almost all of them focus on the United States or other parts of the West, which have a very different cultural context than our research area, China. The Chinese government discourages religious practice so people will prioritize communist ideology, and religious institutions that are permitted are surveilled and restricted by government policies [@pew_10_2023]. In a study comparing religion and prosociality cross-culturally (using data from 70 countries but, importantly, not including data from China), researchers found that, at least in terms of likelihood of being a member of a charity, “religious prosociality was stronger in countries in which religiosity is not socially enforced and in which people have a free choice to be or not to be religious” [@stavrova_religious_2014]. Because non-religion is somewhat socially enforced in China, we hope to determine if religion is a predictor of prosocial giving under those conditions.
+
+The dataset we used was collected by a group of Chinese scholars in 2007 with the aim to collect a representative sample of religiosity and other characteristics of Chinese people through ensuring anonymity and not being affiliated with the government [@yang_spiritual_2022]. Using this observational dataset, we hope to determine whether identifying as religious was a significant predictor of prosocial spending after controlling for other factors that might impact one’s ability to give (such as weekly income) and their willingness to give (such as happiness level and political affiliation).
+
+
+```{r}
+#| include: false
+## data wrangling
+library(tidyverse)
+library(ggplot2)
+library(kableExtra)
+china <- read_csv("Spiritual_Life_Study_of_Chinese_Residents.csv")
+
+# missing data wrangling
+china <- china |> select(MONEYCHR, MONEYCPY, MONEYCOM, MONEYLEC, POLITAFF, HAPPYLIF, INCHSCIT, RELIGBLF)
+
+china <- china |> mutate(moneychr2 = replace(MONEYCHR, list = MONEYCHR > 60000, values = 0))
+china <- china |> mutate(moneychr2 = replace(moneychr2, list = is.na(moneychr2), values = 0))
+china <- china |> mutate(moneycpy2 = replace(MONEYCPY, list = MONEYCPY > 60000, values = 0))
+china <- china |> mutate(moneycpy2 = replace(moneycpy2, list = is.na(moneycpy2), values = 0))
+china <- china |> mutate(moneycom2 = replace(MONEYCOM, list = MONEYCOM > 60000, values = 0))
+china <- china |> mutate(moneycom2 = replace(moneycom2, list = is.na(moneycom2), values = 0))
+china <- china |> mutate(moneylec2 = replace(MONEYLEC, list = MONEYLEC > 60000, values = 0))
+china <- china |> mutate(moneylec2 = replace(moneylec2, list = is.na(moneylec2), values = 0))
+
+#making NA all people that didnt donate money to any of the prosocial causes
+china <- china |> filter(!(moneychr2==is.na(moneychr2) & moneycpy2==is.na(moneycpy2) & moneycom2==is.na(moneycom2) & moneylec2==is.na(moneylec2)))
+
+#wrangling the religblf variable
+china <- china |> mutate(religblf2 = replace(RELIGBLF, list = RELIGBLF > 2, values = NA))
+china <- china |> drop_na(religblf2)
+#making it a normal dummy variable so 0 = no religion and 1 = yes religion
+china <- china |> mutate(religblf2 = replace(religblf2, list = religblf2==2, values = 0))
+
+#wrangling political affiliation to be communist parties and everyone else
+china$politaff <- case_match(china$POLITAFF, 3 ~ 1, .default = china$POLITAFF)
+china <- china |> filter(politaff < 5)
+
+# combine donated money: MONEYCHR, MONEYCPY, MONEYCOM, MONEYLEC)
+new_china <- china|>
+  mutate(tot_donate_money = rowSums(across(c(moneychr2, moneycpy2, moneycom2, moneylec2))))
+
+# wrangling INCHSCHI 
+table(new_china$INCHSCIT, useNA = "no")
+sum(!is.na(new_china$INCHSCIT))
+
+new_china <- subset(new_china, !INCHSCIT %in% c(16, 17, 98, 99) & !is.na(INCHSCIT))
+nrow(new_china)
+# new_china dataset has 340 observation left after all the wrangling, which excludes missing data, (99) do not know, (98) refuse to answer, (22) no regular income, (21) no income.
+
+# assign monthly household income with the actual values, INCHSCIT now called INCOME.
+new_china$INCOME <- with(new_china, 
+  ifelse(INCHSCIT == 1, 500,
+  ifelse(INCHSCIT == 2, (501 + 1000) / 2,
+  ifelse(INCHSCIT == 3, (1001 + 2000) / 2,
+  ifelse(INCHSCIT == 4, (2001 + 3000) / 2,
+  ifelse(INCHSCIT == 5, (3001 + 4000) / 2,
+  ifelse(INCHSCIT == 6, (4001 + 5000) / 2,
+  ifelse(INCHSCIT == 7, (5001 + 6001) / 2,
+  ifelse(INCHSCIT == 8, (6001 + 7001) / 2,
+  ifelse(INCHSCIT == 9, (7001 + 8001) / 2,
+  ifelse(INCHSCIT == 10, (8001 + 9001) / 2,
+  ifelse(INCHSCIT == 11, (9001 + 10000) / 2,
+  ifelse(INCHSCIT == 12, (10001 + 12000) / 2,
+  ifelse(INCHSCIT == 13, (12001 + 15000) / 2,
+  ifelse(INCHSCIT == 14, (15001 + 20000) / 2,
+  ifelse(INCHSCIT == 15, (20001 + 25000) / 2,
+  ifelse(INCHSCIT == 16, (25001 + 30000) / 2,
+  ifelse(INCHSCIT == 17, (30001 + 50000) / 2,
+  ifelse(INCHSCIT == 18, (50001 + 80000) / 2,
+  ifelse(INCHSCIT == 19, (80001 + 100000) / 2,
+  ifelse(INCHSCIT == 20, 100001, NA)))))))))))))))))))))
+
+table(new_china$INCOME)
+
+# wrangling happy level. 
+table(new_china$HAPPYLIF,useNA = "no")
+new_china <- subset(new_china, HAPPYLIF != 9 & !is.na(HAPPYLIF))
+new_china$HAPPYLIF <- ifelse(new_china$HAPPYLIF == 1, "1", "2")
+table(new_china$religblf2, new_china$HAPPYLIF) 
+#making it a normal indicator variable so 0 = no and 1 = yes
+new_china <- new_china |> mutate(happy2 = ifelse(new_china$HAPPYLIF ==1, "1", "0"))
+
+# variable convert
+new_china <- new_china|>
+  mutate(
+    HAPPYLIF = as.factor(HAPPYLIF),
+    politaff = as.factor(politaff),
+    RELIGBLF = as.factor(religblf2),
+  )
+```
+# Methods
+The data for this study came from the 2007 Spiritual Life Study of Chinese Residents (SLSC), which surveyed 7,021 randomly sampled Chinese residents aged 16 or older [@yang_spiritual_2022]. Data collection occurred in May 2007 through face-to-face interviews. Respondents were selected using a multi-stage sampling method across 56 locales, 3 municipal cities, and 6 provincial capital cities in mainland China. The sample excluded those who had participated in surveys within the past 6 months, had resided at the current location for less than three months, or worked in market research, advertising, public relations, or media.
+
+### Response Variable
+We operationalized prosocial spending by creating a single response variable that represented the sum of the numeric answers from four survey questions: money donated to charity, money spent at community party-organized events, money spent or donated at community social events, and money donated at community lectures or discussions. Because missing data was very common in this data set, and responses to the prosocial giving questions were never marked as 0, only N/A, we had to work under the assumption that some N/As were really a 0. Therefore, if all four contributing categories were missing for a respondent, they were marked as missing data in the prosocial spending variable. However, if data were available for at least one component, missing responses in the other spending categories were treated as 0 to calculate a prosocial spending total. Although this assumption could be flawed, because no responses seemed nonsensical, we hope the error in this assumption is distributed evenly throughout the distribution of the responses, since no respondents had available data for all four categories.
+
+```{r}
+#| include: false
+new_china |> filter(MONEYCHR==!is.na(MONEYCHR) &
+                      MONEYCPY==!is.na(MONEYCPY) &
+                      MONEYCOM==!is.na(MONEYCOM) &
+                      MONEYLEC==!is.na(MONEYLEC)) |> summarize(n())
+```
+
+### Explanatory Variables
+Our main explanatory variable was a binary variable measuring whether a respondent self-identified as religious or not. Other variables that we controlled for and analyzed included a respondent's approximated monthly household income, a binary indicator for their happiness level (either "very happy" or not "very happy"), and a binary indicator for their political affiliation (affiliated with communist party or not affiliated with communist party"). To approximate a respondent's monthly household income based off of their survey response, we assigned them the midpoint of their reported income range (the possible options being 500 yuan, 750.5 yuan, 2500.5 yuan,  3500.5 yuan, 4500.5 yuan, 5501 yuan, 6501 yuan, 7501 yuan, 8501 yuan, 11000.5 yuan, 17500.5 yuan, and 22500.5 yuan). If a respondent had missing data in any of these categories, they were excluded from analysis, leaving the final dataset with 339 observations.
+
+### Hypotheses
+Based off of past literature, we hypothesize that having religious beliefs will have a positive relationship with prosocial spending among Urban Chinese Citizens. Based on this overall hypothesis, we also hypothesize that 1) happiness modifies the relationship between religion and prosocial spending, and 2) political affiliation moderates the relationship between religiosity and prosocial giving. 
+
+### Statistical Modeling
+To investigate the relationships between income, happiness, religious belief, and political affiliation on prosocial spending among Chinese citizens, we fit three multiple linear regression models using ordinary least squares (OLS) regression. Model diagnostics of the plain models revealed violations of linearity, equal variance, and normality assumptions, leading us to log-transform the response variable (total prosocial spending) in all three models. We found no significant outliers in any of the models. 
+
+The first model was a parallel model without any interaction effects. In this model we are simply controlling for the other factors (holding them constant), without assuming that any of them will moderate the relationship between religiosity and and prosocial giving.
+
+The population model for the parallel slopes model predicting prosocial spending is 
+\begin{align} E[\text{log}(prosociality_i) | income_i, religious_i, happy_i, communist_i] = \\ \beta_0 + \beta_1(income_i) + \beta_2(religious_i) + \beta_3(happy_i) + \beta_4(communist_i) \end{align}
+
+where $prosociality$ is the sum of pro-social spending (in Chinese yuan) by a respondent $i$, $income$ is their approximated monthly household income (in Chinese yuan), $religious$ is a binary indicator of whether they are religious or not, $happy$ is a binary indicator of whether the respondent is very happy or not, and $communist$ is a binary indicator of whether one affiliates with the communist party or not.
+
+T-test of slope: $H_0: \beta_{1} = 0$ vs. $H_A: \beta_{1} \neq 0$
+
+The second model included an interaction term between happiness level and religious belief, to address the hypothesis that happiness might modify the relationship between religion and prosocial spending. 
+
+The population model for the mean prosocial giving in a religion-happiness interaction model is 
+\begin{align} E[\text{log}(prosociality_i) | income_i, religious_i, happy_i, communist_i] = \\ \beta_0 + \beta_1(income_i) + \beta_2(religious_i) + \beta_3(happy_i) + \beta_4(communist_i) + \beta_5(religious_i)(happy_i) \end{align}
+
+where the variable definitions are the same as the first model. 
+
+To test the necessity of the religiosity and happiness interaction, we used a nested F-test comparing the variance explained by the parallel slope model to the variance explained by the interaction model.
+
+The thrid model included an interaction term between communism and religious belief, to address the hypothesis that political affiliation might moderate the relationship between religiosity and prosocial giving. 
+
+The population model for the religious-political affiliation interaction model is 
+\begin{align}E[\text{log}(prosociality_i) | income_i, religious_i, happy_i, communist_i] = \beta_0 + \\ \beta_1(income_i) + \beta_2(religious_i) + \beta_3(happy_i) + \beta_4(communist_i) + \beta_5(religious_i)(communist_i)\end{align}
+
+where the variable definitions are the same as the first and second model. 
+
+To test the necessity of the religiosity and political affiliation interaction, we used a nested F-test comparing the variance explained by the parallel slope model to the variance explained by this interaction model.
+
+```{r}
+#| include: false
+new_china |> summarize(mean(INCOME), median(INCOME), min(INCOME), max(INCOME))
+new_china |> summarize(mean = mean(tot_donate_money), SD = sd(tot_donate_money), median(tot_donate_money), min(tot_donate_money), max(tot_donate_money))
+new_china |> group_by(religblf2) |> summarize(n = n()) |> mutate(percent = n/339 * 100)
+new_china |> group_by(politaff) |> summarize(n = n()) |> mutate(percent = n/339 * 100)
+new_china <- new_china |> mutate(comm_dummy = replace(as.numeric(politaff), list = as.numeric(politaff) > 1, values = 0))
+new_china |> group_by(comm_dummy) |> summarize(n = n()) |> mutate(percent = n/339 * 100)
+```
+
+```{r}
+#| include: false
+options(scipen = 999)
+# remove NA just in case
+new_china <- new_china|>
+  dplyr::filter(
+    !is.na(tot_donate_money),
+    !is.na(INCOME),
+    !is.na(comm_dummy),
+    !is.na(religblf2),
+    !is.na(HAPPYLIF)
+  )
+
+# fit initial model
+happy_interact_model <- lm(tot_donate_money ~ INCOME + comm_dummy + religblf2 * happy2, data = new_china) 
+summary(happy_interact_model)
+
+# Condition checks
+library(broom)
+# Check linearity and equal variance
+happy_interact_model |> augment() |>
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, col = "red") +
+  theme_bw()
+#linearity is violated 
+
+# Check Normality
+# create the histogram for the residual.
+happy_interact_model |> augment() |>
+  ggplot(aes(x = .resid)) +
+  geom_histogram(bins = 10) +
+  theme_bw()
+
+# create QQ plot
+happy_interact_model |> augment() |>
+  ggplot(aes(sample = .resid)) +
+  geom_qq() +
+  geom_qq_line(col = "blue") +
+  xlab("Theoretical Quantiles") +
+  ylab("Sample Quantiles") +
+  theme_bw()
+#normality is violated
+
+# --------------------------------------
+# log-response transformation 
+log_happy_model <- lm(log(tot_donate_money) ~ INCOME + comm_dummy + religblf2 * happy2, data = new_china) 
+summary(log_happy_model)
+
+# re-check conditions 
+# Check linearity and equal variance
+log_happy_model |> augment() |>
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, col = "red") +
+  theme_bw()
+# better linearity
+
+# Check Normality
+# create the histogram for the residual.
+log_happy_model |> augment() |>
+  ggplot(aes(x = .resid)) +
+  geom_histogram(bins = 10) +
+  theme_bw()
+# almost normally distributed
+
+# create QQ plot
+log_happy_model |> augment() |>
+  ggplot(aes(sample = .resid)) +
+  geom_qq() +
+  geom_qq_line(col = "blue") +
+  xlab("Theoretical Quantiles") +
+  ylab("Sample Quantiles") +
+  theme_bw()
+# much better normality on qq-plot
+```
+
+
+```{r}
+#| include: false
+# check multicollinearity 
+library(car)
+vif(log_happy_model)
+
+# library(GGally)
+# new_china |> 
+#   select(tot_donate_money, religblf2, comm_dummy, INCOME, HAPPYLIF) |> 
+#   ggpairs()
+
+# check influential points
+influece_metrics <- broom::augment(log_happy_model)
+library(dplyr)
+influece_metrics <- influece_metrics |>
+  dplyr::mutate(.studentized = rstudent(log_happy_model)) |>
+  filter(.hat >= 6/n() | abs(.std.resid) > 3) |>
+  select(INCOME, comm_dummy, religblf2, happy2, .std.resid, .hat, .cooksd)
+influece_metrics
+
+library(performance)
+unusual <- check_outliers(log_happy_model)
+plot(unusual) 
+unusual
+```
+
+# Results
+```{r}
+#| include: false
+# EDA 
+new_china |> ggplot(aes(x = religblf2, y = log(tot_donate_money))) + 
+  geom_bar(stat = "identity") + 
+  theme_bw()
+
+library(scales)
+new_china |> ggplot(aes(x = INCOME, y = log(tot_donate_money), fill = as.factor(religblf2))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", col = "blue") +
+  scale_y_continuous() +
+  labs(
+    title = "Donated Money vs. Household Income",
+    x = "Total Household Income",
+    y = "Total Donated Money") + theme_bw()
+
+ggplot(data = new_china, aes(x = tot_donate_money, fill = as.factor(religblf2))) + geom_boxplot() + coord_cartesian(xlim = c(0, 1000)) + labs(title = "Donated Money by Religious Beliefs", x = "Total Donated Money", fill = "Religious Beliefs") + scale_fill_discrete(labels = c("Yes", "No")) + theme_bw()
+```
+```{r}
+#| echo: false
+#| label: fig-relig-comm
+#| fig-cap: Religiosity by Political Affiliation in the Sample (n = 339)
+ggplot(data = new_china, mapping = aes(x = as.factor(comm_dummy), fill = as.factor(religblf2))) + geom_bar(position = "stack") + labs(title = "Religiosity by Political Affiliation in the Sample (n = 339)", x = "Political Affiliation", y = "Count") + scale_x_discrete(labels = c("Not Communist", "Communist")) + scale_fill_discrete(name = "Religious", labels = c("No", "Yes")) + theme_bw()
+```
+
+After removing observations with missing data, 339 observations remained, meaning that 7,487 observations were removed. Among the remaining interviewees, 70 (20.6 %) identified as religious, while 269 (79.4%) did not. In terms of political affiliation, 181 (53.4%) identified with the communist party, while 158 (46.6%) identified as either democratic (3) or had no political affiliation (155). @fig-relig-comm illustrates the religiosity of communist and non-communist affiliated people. A larger proportion of CCP-affiliated people identify as non-religious, but in both groups a majority of people are not religious. Monthly income varies widely across the sample.
+
+### Parallel Model Results: Does religiosity associate with prosocial giving?
+
+```{r}
+#| echo: false
+#| tbl-cap: Fitted Model Coefficients for the Parallel Slopes Model (Estimates are logged estimates)
+#| label: tbl-parallel-results
+log_parallel_model <- lm(log(tot_donate_money) ~ INCOME + comm_dummy + religblf2 + happy2, data = new_china) 
+
+df_log_parallel <- summary(log_parallel_model)$coefficients
+df_log_parallel <- as.data.frame(df_log_parallel)
+rownames(df_log_parallel) <- c("(Intercept)", "Income", "Communist", "Religious", "Happy")
+
+# Create a nicely formatted table from the dataframe using the kable
+df_log_parallel |> 
+  kbl(col.names = c("Term", "Estimate", "Std. Error", "T-Stat", "p-value"), 
+      align = "c", 
+      booktabs = T, 
+      linesep="", 
+      digits = c(2, 2, 2, 3)) |> 
+  kable_classic(full_width = F, latex_options = c("HOLD_position"))
+```
+```{r}
+#| include: false
+confint(log_parallel_model)
+exp(-0.5039447846)
+exp(0.3082995037)
+```
+
+@tbl-parallel-results shows the fitted coefficients for the parallel slopes model relating religiosity to prosocial spending. Using this model with no interaction effects to analyze the sample, a person being religious associates with a 0.91 (95% CI: [0.60, 1.36], p = 0.636) yuan multiplicative decrease, or 9% drop in the median amount of prosocial giving (when holding a person's political affiliation, happiness level, and income constant) compared to non-religious people. However, these results only apply to the sample, because the T-test for slope found that this result is not significant at the 0.05 alpha level. Therefore, we failed to reject the null hypothesis that religiosity has no relationship with prosocial giving in the population. However, a T-test of slope determined the income was a significant predictor to the amount of prosocial giving, but had a very small practical impact.
+
+### Interaction Model 1: Happiness in life will moderate the relationship between religiosity and prosocial giving
+
+```{r}
+#| echo: false
+#| tbl-cap: Fitted Model Coefficients for the Happiness Interaction Model (Estimates are logged estimates)
+#| label: tbl-happy-interact
+# Table summarizing the estimated coefficients of the model and their corresponding standard errors. 
+
+# Representing the regression table as a dataframe (i.e., tidying the summary() output)
+df_log_happy <- summary(log_happy_model)$coefficients
+df_log_happy <- as.data.frame(df_log_happy)
+rownames(df_log_happy) <- c("(Intercept)", "Income", "Communist", "Religious", "Happy", "Religious:Happy")
+
+# Create a nicely formatted table from the dataframe using the kable
+df_log_happy |> 
+  kbl(col.names = c("Term", "Estimate", "Std. Error", "T-Stat", "p-value"), 
+      align = "c", 
+      booktabs = T, 
+      linesep="", 
+      digits = c(2, 2, 2, 3)) |> 
+  kable_classic(full_width = F, latex_options = c("HOLD_position"))
+```
+```{r}
+#| include: false
+#scratch work
+exp(-0.04472516 - 0.12002655)
+
+confint(log_happy_model)
+exp(-0.58519515374)
+exp(0.4957448278)
+
+vcov(log_happy_model)
+relhappylife <- coef(log_happy_model)[4] + coef(log_happy_model)[6]
+se_relhappylife <- sqrt(0.0754891189540 + 0.167332810505 + 2*-0.0740248718289)
+t_stat <- qt(0.975, 333)
+logrh <- relhappylife + c(-1, 1)*t_stat*se_relhappylife
+exp(logrh)
+```
+
+We hypothesized that a person's happiness level might moderate the size or direction of the relationship between religiosity and prosocial giving. The fitted model in @tbl-happy-interact shows that in the sample, we found that happiness level did modify the relationship. The median prosocial spending of a religious person (compared to a non-religious person) that did not report a very happy life multiplicatively decreased by 0.95 (95% CI: [0.56, 1.64]) yuan, or dropped by 5%, when holding political affilation and income constant. However, the median prosocial spending multiplicatively decreased by 0.84 (95% CI: [0.46, 1.55]) yuan, or 15%, when someone did report a very happy life. In both of these subpopulations, religiosity actually had a negative relationship with prosocial giving compared to non-religious people. However, these results cannot be generalized to the broader Chinese population because the terms are not statistically signficant at the 0.05 alpha-level. Additionally, a nested F-test found that the interaction between happiness and religiosity did not explain a statistically significant amount of additional variability in the model compared to the additive model (F = .086, p = .769).
+```{r}
+#| include: false
+# Nested F-test: does happiness level modify the relationship between religious belief and total donated money, holding income and political affiliation constant? 
+# the interaction between religious belief and happiness level does not significantly improve the model.
+
+# the interaction does not significantly improve the model.
+summary(log_parallel_model)
+summary(log_happy_model)
+anova(log_parallel_model, log_happy_model)
+```
+
+### Interaction Model 2: Political Affiliation will modify the relationship between religiosity and prosocial giving
+```{r}
+#| echo: false
+#| tbl-cap: Fitted Model Coefficients for the Political Affiliation Interaction Model (Estimates are logged estimates)
+#| label: tbl-polit-interact
+
+log_polit_model <- lm(log(tot_donate_money) ~ INCOME + comm_dummy*religblf2 + happy2, data = new_china)
+
+# Representing the regression table as a dataframe (i.e., tidying the summary() output)
+df_log_polit <- summary(log_polit_model)$coefficients
+df_log_polit <- as.data.frame(df_log_polit)
+rownames(df_log_polit) <- c("(Intercept)", "Income", "Communist", "Religious", "Happy", "Religious:Communist")
+
+# Create a nicely formatted table from the dataframe using the kable
+df_log_polit |> 
+  kbl(col.names = c("Term", "Estimate", "Std. Error", "T-Stat", "p-value"), 
+      align = "c", 
+      booktabs = T, 
+      linesep="", 
+      digits = c(2, 2, 2, 3)) |> 
+  kable_classic(full_width = F, latex_options = c("HOLD_position"))
+```
+```{r}
+#| include: false
+#scratch work
+# not communist
+exp(-0.23559089)
+# communist
+exp(-0.23559089 + 0.39112124)
+
+#ci's
+confint(log_polit_model) 
+exp(-0.74029944892) 
+exp(0.2691176769) 
+
+vcov(log_polit_model)
+relpolit <- coef(log_polit_model)[4] + coef(log_polit_model)[6]
+se_relpolit <- sqrt(0.06582979954150 + 0.186839933085 + 2*-0.06581235502170)
+t_stat <- qt(0.975, 333)
+logrp <- relpolit + c(-1, 1)*t_stat*se_relpolit
+exp(logrp)
+
+```
+
+We also hypothesized that a person's political affiliation might moderate the size or direction of the relationship between religiosity and prosocial giving. The fitted estimates for this model are shown in @tbl-polit-interact. Again, the sample saw an association: religious non-Communists donated 0.79 (95% CI: 0.48, 1.31) yuan multiplicatively less, or 21% less than the median prosocial spending (holding income and happiness level constant), while religious Communists donated a multiplicative change of 1.17 (95% CI: 0.59, 2.3) more than the median prosocial giving (holding income and happiness level constant). However, these results once again do not generalize to the population: none of the described terms are statistically significant. Additionally, a nested F-test found that the interaction between Communist Affiliation and religiosity did not explain a statistically significant amount of additional variability in the model compared to the additive model (F = 0.082, p = 0.366).
+```{r}
+#| include: false
+#F-test for political affiliation
+anova(log_parallel_model, log_polit_model)
+```
+
+# Discussion
+Although this sample was too small and limited to find results that generalize to the Urban Chinese population, it is still an interesting starting point for future hypotheses. Within the sample, most of our analyses pointed to the notion that being religious might decrease the rate of prosocial giving in China. Therefore, it would be interesting to explore if there is some other moderating factor that leads religious people to donate less, or if religion really is associated with less giving in a Chinese context. Importantly, religious-identifying Communists might give more than the median, while religious non-Communists might give less than the median (only in the sample). Additional studies could further investigate the relationship between Communist ideology and religion in China to possibly find generalizable results about the relationship between religion and prosocial spending in a Chinese context.
+One limitation in the data collection method was that in-person interviews might have caused participants to unconsciously meet the social expectations of interviewers and not give an honest answer. It might be beneficial to conduct a mix of in-person interviews and self-report questionnaires to collect data. Additionally, people from advertising and media careers were not invited to participate in the study, and their answers could have changed some of our findings if people in those careers are a lot more charitable. In terms of analysis, because this dataset held so much missing data and we chose to exclude it, it could never be considered a random sample, and therefore this study cannot make inferences about the broader Urban Chinese population. However, We hope this has provided a starting point for future studies investigating the cross-cultural reliability of the notion that religious identity leads to prosocial spending.
+
+
+# Data Analysis Appendix
+### Model Assumptions Check: Unlogged Model
+```{r}
+#| echo: false 
+# Check linearity and equal variance
+happy_interact_model |> augment() |>
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, col = "red") +
+  theme_bw()
+#linearity is violated 
+
+# Check Normality
+# create the histogram for the residual.
+happy_interact_model |> augment() |>
+  ggplot(aes(x = .resid)) +
+  geom_histogram(bins = 10) +
+  theme_bw()
+
+# create QQ plot
+happy_interact_model |> augment() |>
+  ggplot(aes(sample = .resid)) +
+  geom_qq() +
+  geom_qq_line(col = "blue") +
+  xlab("Theoretical Quantiles") +
+  ylab("Sample Quantiles") +
+  theme_bw()
+#normality is violated
+
+# --------------------------------------
+```
+### Model Assumptions Check: Logged Model
+```{r}
+# re-check conditions 
+# Check linearity and equal variance
+log_happy_model |> augment() |>
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, col = "red") +
+  theme_bw()
+# better linearity
+
+# Check Normality
+# create the histogram for the residual.
+log_happy_model |> augment() |>
+  ggplot(aes(x = .resid)) +
+  geom_histogram(bins = 10) +
+  theme_bw()
+# almost normally distributed
+
+# create QQ plot
+log_happy_model |> augment() |>
+  ggplot(aes(sample = .resid)) +
+  geom_qq() +
+  geom_qq_line(col = "blue") +
+  xlab("Theoretical Quantiles") +
+  ylab("Sample Quantiles") +
+  theme_bw()
+# much better normality on qq-plot
+```
+
+### Regression Table 
+```{r}
+#| echo: false 
+df_log_happy |> 
+  kbl(col.names = c("Term", "Estimate", "Std. Error", "T-Stat", "p-value"), 
+      align = "c", 
+      booktabs = T, 
+      linesep="", 
+      digits = c(2, 2, 2, 3)) |> 
+  kable_classic(full_width = F, latex_options = c("HOLD_position"))
+```
+
+### Anova Tables for nested F-test 
+#### Parallel model and interaction model 1 between happiness and religious belief
+```{r}
+#| echo: false 
+library(knitr)
+library(kableExtra)
+
+anova_results <- data.frame(
+  Model = c("Parallel Model", "Interaction Model 1"),
+  Res_Df = c(334, 333),
+  RSS = c(739.37, 739.18),
+  Df = c(NA, 1),
+  Sum_of_Sq = c(NA, 0.19111),
+  F = c(NA, 0.0861),
+  Pr_F = c(NA, 0.7694)
+)
+
+# Format the table for display
+anova_results %>%
+  kbl(
+    col.names = c("Model", "Residual DF", "RSS", "Df", "Sum of Squares", "F-Statistic", "p-value"),
+    align = "c",
+    booktabs = TRUE,
+    digits = c(NA, 0, 2, 0, 5, 4, 4)
+  ) %>%
+  kable_classic(full_width = FALSE, latex_options = c("HOLD_position"))
+```
+
+#### Parallel model and interaction model 2 between political affiliation and religious belief
+```{r}
+#| echo: false 
+anova_results <- data.frame(
+  Model = c("Parallel Model", "Interaction Model 2"),
+  Res_Df = c(334, 333),
+  RSS = c(739.37, 737.56),
+  Df = c(NA, 1),
+  Sum_of_Sq = c(NA, 1.8135),
+  F = c(NA, 0.8188),
+  Pr_F = c(NA, 0.3662)
+)
+
+# Format the table for display
+anova_results %>%
+  kbl(
+    col.names = c("Model", "Residual DF", "RSS", "Df", "Sum of Squares", "F-Statistic", "p-value"),
+    align = "c",
+    booktabs = TRUE,
+    digits = c(NA, 0, 2, 0, 5, 4, 4)
+  ) %>%
+  kable_classic(full_width = FALSE, latex_options = c("HOLD_position"))
+```
+
+### Table of VIF statistics for multicollinearity
+```{r}
+#| echo: false 
+#| warning: false
+library(car)
+vif_values <- vif(log_happy_model)
+
+# Replace with the actual VIF values you have
+vif_values <- c(1.061236, 1.068791, 1.888984, 1.264088, 2.061363)
+terms <- c("Income", "Communist", "Not Religious", "Not Very Happy", "Not Religious:Not Very Happy")
+
+# Create a data frame
+df_vif <- data.frame(
+  Term = terms,
+  VIF = vif_values
+)
+
+# display VIF table in a nicely formatted style
+df_vif|> 
+  kbl(col.names = c("Term", "VIF"), 
+      align = "c", 
+      booktabs = TRUE, 
+      digits = 3) %>%
+  kable_classic(full_width = FALSE, 
+                latex_options = c("HOLD_position"))
+```
+
+### Visualizations checking for influential points
+```{r}
+#| echo: false 
+# check influential points
+influece_metrics <- broom::augment(log_happy_model)
+library(dplyr)
+influece_metrics <- influece_metrics |>
+  dplyr::mutate(.studentized = rstudent(log_happy_model)) |>
+  filter(.hat >= 6/n() | abs(.std.resid) > 3) |>
+  select(INCOME, comm_dummy, religblf2, happy2, .std.resid, .hat, .cooksd)
+
+library(performance)
+unusual <- check_outliers(log_happy_model)
+plot(unusual) 
+```
+
